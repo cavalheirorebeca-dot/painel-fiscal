@@ -360,7 +360,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#1a2236;fo
           <i class="fa-solid fa-circle-check" style="font-size:10px;color:#a8d060;"></i> Finalizadas
           <span class="sub-count" id="sub-count-finalizada">0</span>
         </div>
-        <div class="nav-subitem" id="sub-historico" onclick="navTo('historico',this)" style="border-top:1px solid rgba(255,255,255,0.06);margin-top:4px;padding-top:8px;">
+        <div class="nav-subitem" id="sub-historico" onclick="abrirBaseHistorica()" style="border-top:1px solid rgba(255,255,255,0.06);margin-top:4px;padding-top:8px;">
           <i class="fa-solid fa-clock-rotate-left" style="font-size:10px;color:#f59e0b;"></i> Base Histórica
           <span class="sub-count" id="sub-count-historico" style="background:rgba(245,158,11,0.3);color:#f59e0b;">0</span>
         </div>
@@ -578,6 +578,22 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#1a2236;fo
         </div>
       </div>
     </div>
+    <!-- DIALOG: SENHA BASE HISTÓRICA -->
+    <div id="dialog-senha-bh" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:500;align-items:center;justify-content:center;">
+      <div class="dialog-box" style="max-width:340px;">
+        <div class="dialog-icon" style="background:#FEF3C7;color:#92400E;"><i class="fa-solid fa-clock-rotate-left"></i></div>
+        <div class="dialog-title">Base Histórica ORBE</div>
+        <div class="dialog-sub">Digite a senha para acessar:</div>
+        <input id="bh-senha-input" type="password" placeholder="Senha..." onkeydown="if(event.key==='Enter')verificarSenhaBH()"
+          style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:7px;font-size:14px;font-family:inherit;margin-bottom:14px;text-align:center;"/>
+        <div id="bh-senha-erro" style="color:#991B1B;font-size:12px;margin-bottom:10px;display:none;">Senha incorreta. Tente novamente.</div>
+        <div class="dialog-actions">
+          <button class="btn btn-primary" onclick="verificarSenhaBH()"><i class="fa-solid fa-unlock"></i> Acessar</button>
+          <button class="btn" onclick="fecharSenhaBH()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
     <div id="dialog-excluir" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:300;align-items:center;justify-content:center;">
       <div class="dialog-box">
         <div class="dialog-icon" style="background:#FEE2E2;color:#991B1B;"><i class="fa-solid fa-trash"></i></div>
@@ -3698,7 +3714,36 @@ function exportarOrigensExcel() {
 
 // ===================== INDICADORES =====================
 const SENHA_IND = 'ind2026';
+const SENHA_BH  = 'bh2026';
 let indAutenticado = false;
+let bhAutenticado  = false;
+
+function abrirBaseHistorica() {
+  if(bhAutenticado) {
+    navTo('historico', document.getElementById('sub-historico'));
+  } else {
+    document.getElementById('dialog-senha-bh').style.display = 'flex';
+    setTimeout(()=>document.getElementById('bh-senha-input')?.focus(), 100);
+  }
+}
+
+function verificarSenhaBH() {
+  if(document.getElementById('bh-senha-input').value === SENHA_BH) {
+    bhAutenticado = true;
+    fecharSenhaBH();
+    navTo('historico', document.getElementById('sub-historico'));
+  } else {
+    document.getElementById('bh-senha-erro').style.display = 'block';
+    document.getElementById('bh-senha-input').value = '';
+    document.getElementById('bh-senha-input').focus();
+  }
+}
+
+function fecharSenhaBH() {
+  document.getElementById('dialog-senha-bh').style.display = 'none';
+  document.getElementById('bh-senha-input').value = '';
+  document.getElementById('bh-senha-erro').style.display = 'none';
+}
 let chartInstances = {};
 
 function abrirIndicadores() {
