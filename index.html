@@ -7,6 +7,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -389,7 +390,10 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#1a2236;fo
       </div>
     </div>
 
-    <div class="nav-label" style="margin-top:8px;">Exportar</div>
+    <!-- Indicadores (senha protegido) -->
+    <div class="nav-item" onclick="abrirIndicadores()">
+      <i class="fa-solid fa-chart-line" style="width:18px;font-size:15px;"></i> Indicadores
+    </div>
     <div class="nav-item" onclick="exportarExcel()">
       <i class="fa-regular fa-file-excel"></i> Exportar Excel
     </div>
@@ -552,7 +556,28 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#1a2236;fo
       </div>
     </div>
 
-    <!-- DIALOG: CONFIRMAR EXCLUSÃO -->
+    <!-- PAGE: INDICADORES -->
+    <div class="page" id="page-indicadores">
+      <div id="ind-content">
+        <!-- filled by renderIndicadores() -->
+      </div>
+    </div>
+
+    <!-- DIALOG: SENHA INDICADORES -->
+    <div id="dialog-senha-ind" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:500;align-items:center;justify-content:center;">
+      <div class="dialog-box" style="max-width:340px;">
+        <div class="dialog-icon" style="background:#DBEAFE;color:#1E40AF;"><i class="fa-solid fa-lock"></i></div>
+        <div class="dialog-title">Acesso Restrito</div>
+        <div class="dialog-sub">Digite a senha para acessar os Indicadores:</div>
+        <input id="ind-senha-input" type="password" placeholder="Senha..." onkeydown="if(event.key==='Enter')verificarSenhaInd()"
+          style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:7px;font-size:14px;font-family:inherit;margin-bottom:14px;text-align:center;"/>
+        <div id="ind-senha-erro" style="color:#991B1B;font-size:12px;margin-bottom:10px;display:none;">Senha incorreta. Tente novamente.</div>
+        <div class="dialog-actions">
+          <button class="btn btn-primary" onclick="verificarSenhaInd()"><i class="fa-solid fa-unlock"></i> Acessar</button>
+          <button class="btn" onclick="fecharSenhaInd()">Cancelar</button>
+        </div>
+      </div>
+    </div>
     <div id="dialog-excluir" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:300;align-items:center;justify-content:center;">
       <div class="dialog-box">
         <div class="dialog-icon" style="background:#FEE2E2;color:#991B1B;"><i class="fa-solid fa-trash"></i></div>
@@ -1075,7 +1100,7 @@ function atualizarMetricas() {
 }
 
 // ===================== TABLE =====================
-function renderTabela(dados, pesquisaAtiva) {
+function renderTabela(dados, pesquisaAtiva, histDados) {
   const count = document.getElementById('results-count');
   const cont = document.getElementById('table-container');
   if(!pesquisaAtiva) {
@@ -1083,35 +1108,71 @@ function renderTabela(dados, pesquisaAtiva) {
     cont.innerHTML = '<div class="empty-state"><i class="fa-solid fa-magnifying-glass" style="color:#d1d5db;"></i>Use a pesquisa acima para localizar solicitações.</div>';
     return;
   }
-  count.textContent = dados.length + ' solicitação(ões) encontrada(s)';
-  if(!dados.length){
+  const total = dados.length + (histDados?.length||0);
+  count.textContent = `${total} resultado(s) encontrado(s)${histDados?.length?` (${dados.length} workflow + ${histDados.length} histórico)`:''}`;
+  
+  let html = '';
+  
+  // Workflow results
+  if(!dados.length && !(histDados?.length)) {
     cont.innerHTML='<div class="empty-state"><i class="fa-regular fa-folder-open"></i>Nenhuma solicitação encontrada.</div>';
     return;
   }
-  const rows = dados.map(s=>{
-    const a = s.analisar||{};
-    const f = s.fiscal||{};
-    const etapa = s.etapaAtual||'analisar';
-    const badge = BADGE_CLASSES[etapa]||'badge-gray';
-    return `<tr onclick="abrirSolicitacao('${s.id}')">
-      <td>${a.numSolicitacao||'—'}</td>
-      <td>${a.fornecedor||'—'}</td>
-      <td>${a.numDocumento||'—'}</td>
-      <td>${a.cnpjCpf||'—'}</td>
-      <td>${f.valorBruto||'—'}</td>
-      <td>${a.dataPrevPagamento||'—'}</td>
-      <td><span class="stage-pill ${badge}">${ETAPAS[etapa]||etapa}</span></td>
-      <td>${a.urgencia==='sim'?'<span class="stage-pill badge-red">Sim</span>':'<span class="stage-pill badge-gray">Não</span>'}</td>
-    </tr>`;
-  }).join('');
-  cont.innerHTML=`<table class="data-table">
-    <thead><tr>
-      <th>Nº Solicitação</th><th>Fornecedor</th><th>Nº Documento</th>
-      <th>CNPJ / CPF</th><th>Valor Bruto</th><th>Dt. Prev. Pagamento</th>
-      <th>Etapa Atual</th><th>Urgência</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+  if(dados.length) {
+    const rows = dados.map(s=>{
+      const a = s.analisar||{};
+      const f = s.fiscal||{};
+      const etapa = s.etapaAtual||'analisar';
+      const badge = BADGE_CLASSES[etapa]||'badge-gray';
+      return `<tr onclick="abrirSolicitacao('${s.id}')" style="cursor:pointer;">
+        <td>${a.numSolicitacao||'—'}</td>
+        <td>${a.fornecedor||'—'}</td>
+        <td>${a.numDocumento||'—'}</td>
+        <td>${a.cnpjCpf||'—'}</td>
+        <td>${f.valorBruto||'—'}</td>
+        <td>${a.dataPrevPagamento||'—'}</td>
+        <td><span class="stage-pill ${badge}">${ETAPAS[etapa]||etapa}</span></td>
+        <td>${a.urgencia==='sim'?'<span class="stage-pill badge-red">Sim</span>':'<span class="stage-pill badge-gray">Não</span>'}</td>
+      </tr>`;
+    }).join('');
+    html += `<div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;padding:0 2px;">Workflow atual (${dados.length})</div>
+    <table class="data-table" style="margin-bottom:16px;">
+      <thead><tr>
+        <th>Nº Solicitação</th><th>Fornecedor</th><th>Nº Documento</th>
+        <th>CNPJ / CPF</th><th>Valor Bruto</th><th>Dt. Prev. Pagamento</th>
+        <th>Etapa Atual</th><th>Urgência</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  // Historico results
+  if(histDados?.length) {
+    const hrows = histDados.map(r=>{
+      const status = r.etapaHistorico==='finalizada'?'<span class="stage-pill badge-final" style="color:#fff;">Finalizada</span>':
+                     r.etapaHistorico==='devolucao'?'<span class="stage-pill badge-gray">Devolução</span>':
+                     '<span class="stage-pill badge-blue">Em Aberto</span>';
+      return `<tr onclick="abrirHistorico('${r._key||Object.keys(todosHistorico).find(k=>todosHistorico[k].orbe===r.orbe)||''}')" style="cursor:pointer;background:#fffbeb;">
+        <td style="font-weight:600;">${r.orbe||'—'}</td>
+        <td>${r.fornecedor||'—'}</td>
+        <td>${r.numDoc||r.numDocSistema||'—'}</td>
+        <td>${r.cnpj||r.cnpjSistema||'—'}</td>
+        <td>${r.produto||'—'}</td>
+        <td>${r.disponibilizadoEm?new Date(r.disponibilizadoEm).toLocaleDateString('pt-BR'):'—'}</td>
+        <td>${status}</td>
+      </tr>`;
+    }).join('');
+    html += `<div style="font-size:12px;font-weight:600;color:#92400E;margin-bottom:6px;padding:0 2px;"><i class="fa-solid fa-clock-rotate-left"></i> Base Histórica ORBE (${histDados.length})</div>
+    <table class="data-table">
+      <thead><tr>
+        <th>ORBE</th><th>Fornecedor</th><th>Nº Documento</th>
+        <th>CNPJ</th><th>Produto</th><th>Disponibilizado em</th><th>Status</th>
+      </tr></thead>
+      <tbody>${hrows}</tbody>
+    </table>`;
+  }
+
+  cont.innerHTML = html;
 }
 
 // ===================== SEARCH =====================
@@ -1127,6 +1188,8 @@ function pesquisar() {
   const num = document.getElementById('search-num').value.toLowerCase().trim();
   const cnpj = document.getElementById('search-cnpj').value.toLowerCase().trim();
   const data = document.getElementById('search-data').value.toLowerCase().trim();
+
+  // Search workflow solicitações
   const arr = Object.values(todasSolicitacoes);
   const filtrado = arr.filter(s=>{
     const a = s.analisar||{};
@@ -1134,7 +1197,16 @@ function pesquisar() {
       && (!cnpj||(a.cnpjCpf||'').toLowerCase().includes(cnpj))
       && (!data||(a.dataPrevPagamento||'').toLowerCase().includes(data));
   });
-  renderTabela(filtrado, true);
+
+  // Also search historico records
+  const histArr = Object.values(todosHistorico);
+  const filtradoHist = histArr.filter(r=>{
+    return (!num||[(r.orbe||''),(r.numDoc||''),(r.numDocSistema||'')].some(v=>v.toLowerCase().includes(num)))
+      && (!cnpj||[(r.cnpj||''),(r.cnpjSistema||'')].some(v=>v.toLowerCase().includes(cnpj)))
+      && (!data||(r.disponibilizadoEm||r.dataCadastro||'').toLowerCase().includes(data));
+  });
+
+  renderTabela(filtrado, true, filtradoHist);
 }
 
 function limparPesquisa() {
@@ -3622,6 +3694,281 @@ function exportarOrigensExcel() {
   }));
   baixarXlsx(dados, 'origens-mapeadas-'+dataHoje()+'.xlsx');
   toast('Excel exportado!');
+}
+
+// ===================== INDICADORES =====================
+const SENHA_IND = 'ind2026';
+let indAutenticado = false;
+let chartInstances = {};
+
+function abrirIndicadores() {
+  if(indAutenticado) {
+    navToIndicadores();
+  } else {
+    document.getElementById('dialog-senha-ind').style.display = 'flex';
+    setTimeout(()=>document.getElementById('ind-senha-input')?.focus(), 100);
+  }
+}
+
+function verificarSenhaInd() {
+  const senha = document.getElementById('ind-senha-input').value;
+  if(senha === SENHA_IND) {
+    indAutenticado = true;
+    fecharSenhaInd();
+    navToIndicadores();
+  } else {
+    document.getElementById('ind-senha-erro').style.display = 'block';
+    document.getElementById('ind-senha-input').value = '';
+    document.getElementById('ind-senha-input').focus();
+  }
+}
+
+function fecharSenhaInd() {
+  document.getElementById('dialog-senha-ind').style.display = 'none';
+  document.getElementById('ind-senha-input').value = '';
+  document.getElementById('ind-senha-erro').style.display = 'none';
+}
+
+function navToIndicadores() {
+  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+  document.querySelectorAll('.nav-subitem').forEach(i=>i.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-indicadores').classList.add('active');
+  document.getElementById('topbar-title').textContent = 'Indicadores';
+  etapaAtiva = null;
+  atualizarBotaoIniciar();
+  renderIndicadores();
+}
+
+function renderIndicadores() {
+  // Destroy existing charts
+  Object.values(chartInstances).forEach(c=>{ try{c.destroy();}catch(e){} });
+  chartInstances = {};
+
+  // Combine all data
+  const solArr = Object.values(todasSolicitacoes);
+  const histArr = Object.values(todosHistorico);
+
+  // === Calcular indicadores ===
+  const totalWorkflow = solArr.length;
+  const totalHistorico = histArr.length;
+  const totalGeral = totalWorkflow + totalHistorico;
+
+  const finalizadas = solArr.filter(s=>s.etapaAtual==='finalizada').length + histArr.filter(r=>r.etapaHistorico==='finalizada').length;
+  const devolucoes = solArr.filter(s=>s.etapaAtual==='devolucao').length + histArr.filter(r=>r.etapaHistorico==='devolucao').length;
+  const emAberto = solArr.filter(s=>!['finalizada','devolucao'].includes(s.etapaAtual)).length + histArr.filter(r=>r.etapaHistorico==='analisar').length;
+  const urgentes = solArr.filter(s=>s.analisar?.urgencia==='sim').length;
+
+  // Volume por etapa (workflow)
+  const porEtapa = {};
+  Object.keys(ETAPAS).forEach(k=>{ porEtapa[k]=0; });
+  solArr.forEach(s=>{ if(s.etapaAtual && porEtapa[s.etapaAtual]!==undefined) porEtapa[s.etapaAtual]++; });
+
+  // Volume por mês (historico + workflow)
+  const porMes = {};
+  [...solArr.map(s=>({data:s.analisar?.dataSolicitacao||s.chegadaEtapa?.analisar||''})),
+   ...histArr.map(r=>({data:r.dataInicio||r.dataCadastro||''}))
+  ].forEach(({data})=>{
+    if(!data) return;
+    const d = new Date(data);
+    if(isNaN(d)) return;
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    porMes[key] = (porMes[key]||0) + 1;
+  });
+  const mesesOrdenados = Object.keys(porMes).sort().slice(-12);
+
+  // Requisitantes mais ativos
+  const porRequisitante = {};
+  [...solArr.map(s=>s.analisar?.fornecedor||s.analisar?.requisitante||''),
+   ...histArr.map(r=>r.requisitante||'')
+  ].filter(Boolean).forEach(r=>{ porRequisitante[r]=(porRequisitante[r]||0)+1; });
+  const topRequisitantes = Object.entries(porRequisitante).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  // Responsáveis mais ativos
+  const porResponsavel = {};
+  [...solArr.map(s=>(s.usuarios?.analisar?.nome||s.usuarios?.fiscal?.nome||'')),
+   ...histArr.map(r=>r.responsavel||r.respAnalisar||'')
+  ].filter(Boolean).forEach(r=>{ porResponsavel[r]=(porResponsavel[r]||0)+1; });
+  const topResponsaveis = Object.entries(porResponsavel).sort((a,b)=>b[1]-a[1]).slice(0,8);
+
+  // Produtos mais frequentes
+  const porProduto = {};
+  [...solArr.map(s=>s.fiscal?.produto||''),
+   ...histArr.map(r=>r.produto||'')
+  ].filter(Boolean).forEach(p=>{
+    const desc = window._origensProdutoCache?.[p] ? `${p} — ${window._origensProdutoCache[p]}` : p;
+    porProduto[desc]=(porProduto[desc]||0)+1;
+  });
+  const topProdutos = Object.entries(porProduto).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  // MOV mais frequentes
+  const porMov = {};
+  [...solArr.map(s=>s.fiscal?.movimento||''),
+   ...histArr.map(r=>r.mov||r.movSistema||'')
+  ].filter(Boolean).forEach(m=>{ porMov[m]=(porMov[m]||0)+1; });
+  const topMov = Object.entries(porMov).sort((a,b)=>b[1]-a[1]).slice(0,8);
+
+  // Tempo médio de execução (historico - tempoExecucao field)
+  const tempos = histArr.map(r=>{
+    if(!r.tempoExecucao) return null;
+    const parts = r.tempoExecucao.split(':');
+    return parts.length>=2 ? parseFloat(parts[0])+(parseFloat(parts[1])/60) : null;
+  }).filter(t=>t!==null && t>0 && t<9000);
+  const tempoMedio = tempos.length ? (tempos.reduce((a,b)=>a+b,0)/tempos.length).toFixed(1) : '—';
+  const tempoMin = tempos.length ? Math.min(...tempos).toFixed(1) : '—';
+  const tempoMax = tempos.length ? Math.max(...tempos).toFixed(1) : '—';
+
+  const COLORS = ['#3B6D11','#60a5fa','#f59e0b','#f87171','#a78bfa','#4ade80','#fb923c','#38bdf8','#e879f9','#34d399'];
+
+  document.getElementById('ind-content').innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+    <div>
+      <div style="font-size:18px;font-weight:700;color:#1a2236;">Painel de Indicadores</div>
+      <div style="font-size:12px;color:#6b7280;">Workflow atual + Base Histórica ORBE · Atualizado em ${new Date().toLocaleString('pt-BR')}</div>
+    </div>
+    <button class="btn" onclick="indAutenticado=false;toast('Sessão de indicadores encerrada.');">
+      <i class="fa-solid fa-lock"></i> Sair dos Indicadores
+    </button>
+  </div>
+
+  <!-- Cards KPI -->
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:24px;">
+    ${[
+      ['Total Geral',totalGeral,'#1a2236','solicitações'],
+      ['Workflow Atual',totalWorkflow,'#1E40AF','em andamento'],
+      ['Base Histórica',totalHistorico,'#92400E','registros'],
+      ['Finalizadas',finalizadas,'#3B6D11','concluídas'],
+      ['Devoluções',devolucoes,'#991B1B','retornadas'],
+      ['Em Aberto',emAberto,'#854F0B','pendentes'],
+    ].map(([l,v,c,s])=>`<div class="metric-card">
+      <div class="metric-label">${l}</div>
+      <div class="metric-value" style="color:${c};">${v}</div>
+      <div class="metric-sub">${s}</div>
+    </div>`).join('')}
+  </div>
+
+  <!-- Tempo médio -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;">
+    ${[
+      ['Tempo Médio Execução',tempoMedio+'h','horas por solicitação'],
+      ['Menor Tempo',tempoMin+'h','mais rápida'],
+      ['Maior Tempo',tempoMax+'h','mais demorada'],
+    ].map(([l,v,s])=>`<div class="metric-card">
+      <div class="metric-label">${l}</div>
+      <div class="metric-value" style="font-size:20px;">${v}</div>
+      <div class="metric-sub">${s}</div>
+    </div>`).join('')}
+  </div>
+
+  <!-- Gráficos linha 1 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="pipeline-wrap">
+      <div class="pipeline-title">Volume por Etapa (Workflow Atual)</div>
+      <canvas id="chart-etapas" height="220"></canvas>
+    </div>
+    <div class="pipeline-wrap">
+      <div class="pipeline-title">Volume por Mês (últimos 12 meses)</div>
+      <canvas id="chart-meses" height="220"></canvas>
+    </div>
+  </div>
+
+  <!-- Gráficos linha 2 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="pipeline-wrap">
+      <div class="pipeline-title">Top 10 Fornecedores / Requisitantes</div>
+      <canvas id="chart-requisitantes" height="260"></canvas>
+    </div>
+    <div class="pipeline-wrap">
+      <div class="pipeline-title">Top 8 Responsáveis</div>
+      <canvas id="chart-responsaveis" height="260"></canvas>
+    </div>
+  </div>
+
+  <!-- Gráficos linha 3 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="pipeline-wrap">
+      <div class="pipeline-title">Top 10 Produtos Mais Frequentes</div>
+      <canvas id="chart-produtos" height="260"></canvas>
+    </div>
+    <div class="pipeline-wrap">
+      <div class="pipeline-title">Top 8 Movimentos (MOV)</div>
+      <canvas id="chart-mov" height="260"></canvas>
+    </div>
+  </div>
+
+  <!-- Status geral -->
+  <div style="display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:16px;">
+    <div class="pipeline-wrap">
+      <div class="pipeline-title">Distribuição por Status</div>
+      <canvas id="chart-status" height="220"></canvas>
+    </div>
+    <div class="pipeline-wrap">
+      <div class="pipeline-title">Urgências no Workflow (${urgentes} marcadas como urgente)</div>
+      <canvas id="chart-urgencia" height="220"></canvas>
+    </div>
+  </div>`;
+
+  // Render charts after DOM update
+  setTimeout(()=>{
+    // Etapas
+    chartInstances.etapas = new Chart(document.getElementById('chart-etapas'), {
+      type:'bar',
+      data:{labels:Object.values(ETAPAS).filter((_,i)=>i<8),
+        datasets:[{label:'Qtd',data:Object.keys(ETAPAS).slice(0,8).map(k=>porEtapa[k]||0),backgroundColor:COLORS}]},
+      options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+    });
+    // Meses
+    chartInstances.meses = new Chart(document.getElementById('chart-meses'), {
+      type:'line',
+      data:{labels:mesesOrdenados,
+        datasets:[{label:'Solicitações',data:mesesOrdenados.map(m=>porMes[m]||0),
+          borderColor:'#3B6D11',backgroundColor:'rgba(59,109,17,0.1)',tension:0.4,fill:true}]},
+      options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+    });
+    // Requisitantes
+    chartInstances.req = new Chart(document.getElementById('chart-requisitantes'), {
+      type:'bar',data:{
+        labels:topRequisitantes.map(([n])=>n.length>25?n.slice(0,25)+'…':n),
+        datasets:[{label:'Qtd',data:topRequisitantes.map(([,v])=>v),backgroundColor:'#60a5fa'}]},
+      options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}
+    });
+    // Responsáveis
+    chartInstances.resp = new Chart(document.getElementById('chart-responsaveis'), {
+      type:'bar',data:{
+        labels:topResponsaveis.map(([n])=>n.length>20?n.slice(0,20)+'…':n),
+        datasets:[{label:'Qtd',data:topResponsaveis.map(([,v])=>v),backgroundColor:'#a78bfa'}]},
+      options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}
+    });
+    // Produtos
+    chartInstances.prod = new Chart(document.getElementById('chart-produtos'), {
+      type:'bar',data:{
+        labels:topProdutos.map(([n])=>n.length>30?n.slice(0,30)+'…':n),
+        datasets:[{label:'Qtd',data:topProdutos.map(([,v])=>v),backgroundColor:'#f59e0b'}]},
+      options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}
+    });
+    // MOV
+    chartInstances.mov = new Chart(document.getElementById('chart-mov'), {
+      type:'doughnut',data:{
+        labels:topMov.map(([n])=>n),
+        datasets:[{data:topMov.map(([,v])=>v),backgroundColor:COLORS}]},
+      options:{responsive:true,plugins:{legend:{position:'right'}}}
+    });
+    // Status
+    chartInstances.status = new Chart(document.getElementById('chart-status'), {
+      type:'pie',data:{
+        labels:['Finalizadas','Em Aberto','Devolução'],
+        datasets:[{data:[finalizadas,emAberto,devolucoes],backgroundColor:['#3B6D11','#60a5fa','#f87171']}]},
+      options:{responsive:true,plugins:{legend:{position:'bottom'}}}
+    });
+    // Urgência
+    const urgNao = totalWorkflow - urgentes;
+    chartInstances.urg = new Chart(document.getElementById('chart-urgencia'), {
+      type:'doughnut',data:{
+        labels:['Urgentes','Normais'],
+        datasets:[{data:[urgentes,urgNao],backgroundColor:['#f87171','#3B6D11']}]},
+      options:{responsive:true,plugins:{legend:{position:'right'}}}
+    });
+  }, 100);
 }
 
 // ===================== UTILS =====================
