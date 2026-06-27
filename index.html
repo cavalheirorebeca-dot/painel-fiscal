@@ -232,6 +232,15 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#1a2236;fo
 .origem-selecionar-btn{display:block;width:calc(100% - 40px);margin:0 20px 20px;padding:10px;background:#3B6D11;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;}
 .origem-selecionar-btn:hover{background:#27500A;}
 
+/* DUPLICATE CHECK */
+.dup-alert{background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#92400E;display:flex;flex-direction:column;gap:6px;}
+.dup-alert-title{font-weight:700;display:flex;align-items:center;gap:6px;}
+.dup-alert-item{padding:4px 8px;background:rgba(245,158,11,0.1);border-radius:4px;cursor:pointer;font-size:11px;}
+.dup-alert-item:hover{background:rgba(245,158,11,0.2);}
+.dup-motivo-banner{background:#FEE2E2;border:1px solid #F87171;border-radius:8px;padding:12px 16px;margin-bottom:16px;}
+.dup-motivo-label{font-size:11px;font-weight:700;color:#991B1B;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+.dup-motivo-readonly{font-size:13px;color:#374151;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:8px 10px;min-height:40px;}
+
 /* INFORMAÇÕES ACESSÓRIAS */
 .ia-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;}
 .ia-badge-ativo{background:#EAF3DE;color:#3B6D11;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;}
@@ -365,8 +374,15 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#1a2236;fo
 
     </div>
 
-    <div class="nav-item" onclick="navTo('acessorias', this); carregarAcessorias();">
-      <i class="fa-regular fa-clipboard-list"></i> Informações Acessórias
+    <!-- Informações Acessórias + sub-menu -->
+    <div class="nav-group-toggle" id="toggle-acessorias" onclick="toggleSubMenu('acessorias')">
+      <div class="left"><i class="fa-solid fa-database" style="width:18px;font-size:15px;"></i> Informações Acessórias</div>
+      <i class="fa-solid fa-chevron-down arrow"></i>
+    </div>
+    <div class="nav-subitems" id="subitems-acessorias">
+      <div class="nav-subitem" onclick="navTo('acessorias', this); carregarAcessorias();" id="sub-origens-mapeadas">
+        <i class="fa-solid fa-map-pin" style="font-size:9px;color:#a78bfa;"></i> Origens Mapeadas
+      </div>
     </div>
 
     <div class="nav-label" style="margin-top:8px;">Exportar</div>
@@ -763,6 +779,81 @@ function prazoStatus(s, etapa) {
 }      // etapa do sub-menu ativa ('analisar', 'fiscal', etc.) ou null se visão geral
 let origemNavegacao = null; // onde o usuário estava ao abrir o modal ('docs' | etapa key)
 
+// ===================== DUPLICATAS =====================
+function verificarDuplicatas(numSol, numDoc, cnpj, idAtual) {
+  const resultados = [];
+  Object.values(todasSolicitacoes).forEach(s => {
+    if(s.id === idAtual) return;
+    const a = s.analisar||{};
+    const matches = [];
+    if(numSol && a.numSolicitacao && a.numSolicitacao.trim().toLowerCase() === numSol.trim().toLowerCase())
+      matches.push('Nº Solicitação: ' + a.numSolicitacao);
+    if(numDoc && a.numDocumento && a.numDocumento.trim().toLowerCase() === numDoc.trim().toLowerCase())
+      matches.push('Nº Documento: ' + a.numDocumento);
+    if(cnpj && a.cnpjCpf && cnpj.replace(/\D/g,'').length > 4 && a.cnpjCpf.replace(/\D/g,'') === cnpj.replace(/\D/g,''))
+      matches.push('CNPJ/CPF: ' + a.cnpjCpf);
+    if(matches.length > 0) resultados.push({s, matches});
+  });
+  return resultados;
+}
+
+function renderDupAlert(numSol, numDoc, cnpj, idAtual, editavel) {
+  if(!editavel) return '';
+  const dups = verificarDuplicatas(numSol, numDoc, cnpj, idAtual);
+  if(!dups.length) return '';
+  const items = dups.map(d => {
+    const a = d.s.analisar||{};
+    return `<div class="dup-alert-item" onclick="event.preventDefault();abrirSolicitacao('${d.s.id}')">
+      <strong>${a.numSolicitacao||'S/N'}</strong> · ${a.fornecedor||'—'} · Etapa: <em>${ETAPAS[d.s.etapaAtual]||d.s.etapaAtual}</em>
+      <span style="color:#B45309;font-size:10px;"> (${d.matches.join(', ')})</span>
+    </div>`;
+  }).join('');
+  return `<div class="dup-alert">
+    <div class="dup-alert-title"><i class="fa-solid fa-triangle-exclamation"></i> ${dups.length} possível(is) duplicidade(s) — clique para visualizar:</div>
+    ${items}
+    <div style="margin-top:8px;">
+      <label style="font-size:11px;font-weight:700;color:#92400E;display:block;margin-bottom:4px;">Motivo para manter (obrigatório para avançar com duplicidade):</label>
+      <textarea id="dup-motivo-input" oninput="solAtual._motivoDupTemp=this.value" placeholder="Informe o motivo para manter esta solicitação mesmo com duplicidade..."
+        style="width:100%;padding:8px;border:1.5px solid #F59E0B;border-radius:6px;font-family:inherit;font-size:12px;resize:vertical;min-height:56px;box-sizing:border-box;">${solAtual?._motivoDupTemp||solAtual?.motivoDuplicidade||''}</textarea>
+    </div>
+  </div>`;
+}
+
+function renderMotivoDuplicidadeReadonly() {
+  if(!solAtual?.motivoDuplicidade) return '';
+  return `<div class="dup-motivo-banner">
+    <div class="dup-motivo-label"><i class="fa-solid fa-triangle-exclamation"></i> Solicitação mantida com duplicidade</div>
+    <div class="dup-motivo-readonly">${solAtual.motivoDuplicidade}</div>
+  </div>`;
+}
+
+function atualizarAlertaDup() {
+  const box = document.getElementById('dup-alert-placeholder');
+  if(!box) return;
+  const numSol = (document.getElementById('a-numSol')?.value||'').trim();
+  const numDoc = (document.getElementById('a-numDoc')?.value||'').trim();
+  const cnpj   = (document.getElementById('a-cnpj')?.value||'').trim();
+  box.innerHTML = renderDupAlert(numSol, numDoc, cnpj, solAtual?.id, true);
+}
+
+// Chamado ao tentar enviar — verifica se duplicata precisa de motivo
+function validarDuplicidadeAntesDEnviar() {
+  const numSol = (document.getElementById('a-numSol')?.value||'').trim();
+  const numDoc = (document.getElementById('a-numDoc')?.value||'').trim();
+  const cnpj   = (document.getElementById('a-cnpj')?.value||'').trim();
+  const dups = verificarDuplicatas(numSol, numDoc, cnpj, solAtual?.id);
+  if(!dups.length) return true; // sem duplicatas, pode avançar
+  const motivoEl = document.getElementById('dup-motivo-input');
+  const motivo = motivoEl ? motivoEl.value.trim() : (solAtual?.motivoDuplicidade||'');
+  if(!motivo) {
+    toast('Informe o motivo para manter a solicitação com duplicidade antes de enviar.');
+    document.getElementById('dup-motivo-input')?.focus();
+    return false;
+  }
+  solAtual.motivoDuplicidade = motivo;
+  return true;
+}
+
 function toggleDocs() {
   const toggle = document.getElementById('toggle-docs');
   const subs = document.getElementById('subitems-etapas');
@@ -1094,7 +1185,8 @@ function secaoReadonly(titulo, campos) {
 }
 
 function camposReadonlyAnalisar(a={}) {
-  return secaoReadonly('Dados — Analisar (GEFIN)', [
+  const dupBanner = renderMotivoDuplicidadeReadonly();
+  return dupBanner + secaoReadonly('Dados — Analisar', [
     {label:'Nº Solicitação',value:a.numSolicitacao},
     {label:'Data da Solicitação',value:a.dataSolicitacao},
     {label:'Data de Emissão',value:a.dataEmissao},
@@ -1190,14 +1282,15 @@ function renderAnalisar(body, footer, editavel) {
   <div id="form-content-analisar" style="${editavel && !assumed ? 'opacity:0.4;pointer-events:none;' : ''}">
   <div class="form-section">
     <div class="form-section-title">Dados da Solicitação</div>
+    ${podeEditar ? `<div id="dup-alert-placeholder">${renderDupAlert(a.numSolicitacao||'', a.numDocumento||'', a.cnpjCpf||'', solAtual?.id, true)}</div>` : renderMotivoDuplicidadeReadonly()}
     <div class="form-grid">
-      <div class="field"><label>Número da Solicitação</label><input id="a-numSol" value="${a.numSolicitacao||''}" ${dis}/></div>
+      <div class="field"><label>Número da Solicitação</label><input id="a-numSol" value="${a.numSolicitacao||''}" ${dis} ${podeEditar?'oninput="atualizarAlertaDup()"':''}/></div>
       <div class="field"><label>Data da Solicitação</label><input id="a-dataSol" class="campo-data" value="${a.dataSolicitacao||''}" ${dis}/></div>
       <div class="field"><label>Data de Emissão</label><input id="a-dataEmissao" class="campo-data" value="${a.dataEmissao||''}" ${dis}/></div>
       <div class="field"><label>Data Prevista de Pagamento</label><input id="a-dataPrev" class="campo-data" value="${a.dataPrevPagamento||''}" ${dis}/></div>
       <div class="field"><label>Fornecedor</label><input id="a-fornecedor" value="${a.fornecedor||''}" ${dis}/></div>
-      <div class="field"><label>Número do Documento</label><input id="a-numDoc" value="${a.numDocumento||''}" ${dis}/></div>
-      <div class="field"><label>CNPJ / CPF</label><input id="a-cnpj" value="${a.cnpjCpf||''}" ${dis}/></div>
+      <div class="field"><label>Número do Documento</label><input id="a-numDoc" value="${a.numDocumento||''}" ${dis} ${podeEditar?'oninput="atualizarAlertaDup()"':''}/></div>
+      <div class="field"><label>CNPJ / CPF</label><input id="a-cnpj" value="${a.cnpjCpf||''}" ${dis} ${podeEditar?'oninput="atualizarAlertaDup()"':''}/></div>
       <div class="field full"><label>Forma de Pagamento</label><input id="a-formaPag" value="${a.formaPagamento||''}" ${dis}/></div>
       <div class="field full">
         <label>Origem do Documento</label>
@@ -1972,7 +2065,14 @@ function enviarPara(proximaEtapa) {
   const etapaAtual = solAtual.etapaAtual||'analisar';
   let dadosEtapa = {};
 
-  if(etapaAtual==='analisar') dadosEtapa = coletarAnalisar();
+  if(etapaAtual==='analisar') {
+    dadosEtapa = coletarAnalisar();
+    // Collect motivo duplicidade if set
+    const motivoDup = document.getElementById('dup-motivo-input')?.value?.trim() || solAtual?._motivoDupTemp || '';
+    if(motivoDup) solAtual.motivoDuplicidade = motivoDup;
+    // Validate duplicity requires motivo
+    if(!validarDuplicidadeAntesDEnviar()) return;
+  }
   else if(etapaAtual==='fiscal') dadosEtapa = coletarFiscal();
   else if(etapaAtual==='aprovacoes') dadosEtapa = {dataAprovacao: v('ap-dataAprovacao'), observacoes: v('ap-obs')};
   else if(etapaAtual==='registro') dadosEtapa = {idRegistro: v('r-idRegistro'), observacoes: v('r-obs')};
@@ -2004,6 +2104,10 @@ function enviarPara(proximaEtapa) {
 function finalizarDeAnalisar() {
   const motivo = v('a-motivoFinal');
   if(!motivo){ toast('Informe o motivo de finalização antes de continuar.'); return; }
+  // Collect motivo duplicidade if present
+  const motivoDup = document.getElementById('dup-motivo-input')?.value?.trim() || solAtual?._motivoDupTemp || '';
+  if(motivoDup) solAtual.motivoDuplicidade = motivoDup;
+  if(!validarDuplicidadeAntesDEnviar()) return;
   const dadosAnalisar = coletarAnalisar();
   solAtual.analisar = dadosAnalisar;
   solAtual.etapaAtual = 'finalizada';
