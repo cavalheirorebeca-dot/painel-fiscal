@@ -675,13 +675,13 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#1a2236;fo
 </div>
 
 <!-- ===================== MODAL INFORMAÇÕES ACESSÓRIAS ===================== -->
-<div id="ia-backdrop" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:300;align-items:center;justify-content:center;padding:24px;">
+<div id="ia-backdrop" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:600;align-items:center;justify-content:center;padding:24px;">
   <div class="ia-modal">
     <div class="ia-modal-header">
       <span class="ia-modal-title" id="ia-modal-title">Nova Origem Mapeada</span>
       <button onclick="fecharFormOrigem()" style="background:rgba(255,255,255,0.1);border:none;color:#fff;cursor:pointer;width:32px;height:32px;border-radius:6px;font-size:16px;"><i class="fa-solid fa-xmark"></i></button>
     </div>
-    <div style="padding:20px 24px;">
+    <div id="ia-modal-body" style="padding:20px 24px;">
       <div class="ia-sec">Identificação</div>
       <div class="ia-grid">
         <div class="field"><label>CT</label><input id="ia-ct" /></div>
@@ -724,9 +724,24 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#1a2236;fo
       <div class="field" style="margin-bottom:10px;"><label>Histórico</label><textarea id="ia-historico" style="min-height:60px;"></textarea></div>
       <div class="field"><label>Observação</label><textarea id="ia-observacao" style="min-height:60px;"></textarea></div>
     </div>
-    <div style="padding:16px 24px;border-top:1px solid #e5e7eb;display:flex;gap:10px;justify-content:flex-end;">
+    <div id="ia-modal-footer" style="padding:16px 24px;border-top:1px solid #e5e7eb;display:flex;gap:10px;justify-content:flex-end;">
       <button class="btn btn-primary" onclick="salvarOrigem()"><i class="fa-solid fa-floppy-disk"></i> Salvar</button>
       <button class="btn" onclick="fecharFormOrigem()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL HISTÓRICO ORBE ===================== -->
+<div id="hist-backdrop" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:600;align-items:center;justify-content:center;padding:24px;">
+  <div class="ia-modal">
+    <div class="ia-modal-header">
+      <span class="ia-modal-title" id="hist-modal-title">Registro Histórico ORBE</span>
+      <button onclick="fecharHistorico()" style="background:rgba(255,255,255,0.1);border:none;color:#fff;cursor:pointer;width:32px;height:32px;border-radius:6px;font-size:16px;"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="hist-modal-body" style="padding:20px 24px;"></div>
+    <div style="padding:16px 24px;border-top:1px solid #e5e7eb;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-primary" onclick="salvarHistoricoRecord()"><i class="fa-solid fa-floppy-disk"></i> Salvar</button>
+      <button class="btn" onclick="fecharHistorico()">Fechar</button>
     </div>
   </div>
 </div>
@@ -2805,17 +2820,16 @@ function renderTabelaHistorico() {
 function abrirHistorico(key) {
   histEditandoKey = key;
   const r = todosHistorico[key] || {};
-  
-  // Build modal content with all fields grouped
+
   const campo = (l,v,id) => `<div class="field">
     <label>${l}</label>
-    <input id="hi-${id}" value="${(v||'').replace(/"/g,'&quot;')}" style="background:#fff;"/>
+    <input id="hi-${id}" value="${(v||'').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" style="background:#fff;"/>
   </div>`;
   const campoTA = (l,v,id) => `<div class="field full">
     <label>${l}</label>
-    <textarea id="hi-${id}" style="background:#fff;min-height:48px;">${v||''}</textarea>
+    <textarea id="hi-${id}" style="background:#fff;min-height:48px;">${(v||'').replace(/</g,'&lt;')}</textarea>
   </div>`;
-  
+
   const html = `
   <div class="ia-sec">Identificação</div>
   <div class="ia-grid">
@@ -2863,16 +2877,16 @@ function abrirHistorico(key) {
   <div class="ia-sec">Observações</div>
   <div class="form-grid">
     ${campoTA('Impostos / Observação',r.impostosObs,'impostosObs')}
-  </div>
-  `;
-  
-  // Show in ia-modal
-  document.getElementById('ia-modal-title').textContent = `Registro Histórico ORBE ${r.orbe||key}`;
-  // Fill modal body via IA form area
-  const modalEl = document.getElementById('ia-backdrop');
-  const bodyEl = modalEl.querySelector('div[style*="padding:20px"]');
-  if(bodyEl) bodyEl.innerHTML = html;
-  modalEl.style.display = 'flex';
+  </div>`;
+
+  document.getElementById('hist-modal-title').textContent = `Registro ORBE ${r.orbe||key}`;
+  document.getElementById('hist-modal-body').innerHTML = html;
+  document.getElementById('hist-backdrop').style.display = 'flex';
+}
+
+function fecharHistorico() {
+  document.getElementById('hist-backdrop').style.display = 'none';
+  histEditandoKey = null;
 }
 
 function salvarHistoricoRecord() {
@@ -2893,8 +2907,7 @@ function salvarHistoricoRecord() {
   
   HISTORICO_REF.child(histEditandoKey).set(obj).then(() => {
     toast('Registro histórico atualizado!');
-    fecharFormOrigem(); // reuse ia modal close
-    histEditandoKey = null;
+    fecharHistorico();
   }).catch(e => toast('Erro: ' + e.message));
 }
 
@@ -2925,23 +2938,6 @@ function exportarHistoricoExcel() {
   }));
   baixarXlsx(dados, 'base-historica-orbe-'+dataHoje()+'.xlsx');
   toast('Excel exportado!');
-}
-
-// Override IA modal save button to handle historico too
-function salvarOrigem() {
-  if(histEditandoKey) { salvarHistoricoRecord(); return; }
-  // original logic
-  const campos = ['ct','cnpj','status','regime','codigoLc116','codigoMunCfop','movRm','serie',
-    'servicoPrestado','produto','comprom','ir','pis','cofins','csll','inss','issqn',
-    'localOrigem','incidenciaIssqn','valorBruto','valorLiquido','historico','observacao'];
-  const obj = {};
-  campos.forEach(c=>{ const el = document.getElementById('ia-'+c); obj[c] = el ? el.value.trim() : ''; });
-  const key = iaEditandoKey || ('manual_'+Date.now());
-  ORIGENS_REF.child(key).set(obj).then(()=>{
-    if(obj.produto && obj.servicoPrestado) window._origensProdutoCache[obj.produto] = obj.servicoPrestado;
-    fecharFormOrigem();
-    toast(iaEditandoKey ? 'Origem atualizada!' : 'Origem incluída!');
-  }).catch(e=>toast('Erro: '+e.message));
 }
 
 // ===================== EXCLUIR SOLICITAÇÃO (Finalizadas) =====================
