@@ -3635,6 +3635,28 @@ function abrirFormOrigem(key) {
 function fecharFormOrigem() {
   document.getElementById('ia-backdrop').style.display='none';
   iaEditandoKey = null;
+  histEditandoKey = null;
+}
+
+function salvarOrigem() {
+  const campos = ['ct','cnpj','status','regime','codigoLc116','codigoMunCfop','movRm','serie',
+    'servicoPrestado','produto','comprom','ir','pis','cofins','csll','inss','issqn',
+    'localOrigem','incidenciaIssqn','valorBruto','valorLiquido','historico','observacao'];
+  const obj = {};
+  campos.forEach(c=>{
+    const el = document.getElementById('ia-'+c);
+    obj[c] = el ? el.value.trim() : '';
+  });
+  if(!obj.ct && !obj.cnpj && !obj.servicoPrestado) {
+    toast('Preencha ao menos CT, CNPJ ou Serviço Prestado.'); return;
+  }
+  const key = iaEditandoKey || ('manual_'+Date.now());
+  ORIGENS_REF.child(key).set(obj).then(()=>{
+    if(obj.produto && obj.servicoPrestado)
+      window._origensProdutoCache[obj.produto] = obj.servicoPrestado;
+    fecharFormOrigem();
+    toast(iaEditandoKey ? 'Origem atualizada!' : 'Origem incluída com sucesso!');
+  }).catch(e=>toast('Erro ao salvar: '+e.message));
 }
 
 function editarOrigem(key) { abrirFormOrigem(key); }
